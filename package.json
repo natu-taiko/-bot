@@ -1,7 +1,6 @@
 {
   "name": "mybot",
   "version": "1.0.0",
-  "description": "discord music bot",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
@@ -13,6 +12,6 @@
     "discord.js": "^14.16.0",
     "@discordjs/voice": "^0.17.0",
     "ffmpeg-static": "^5.2.0",
-    "yt-dlp-exec": "^2.0.0"
+    "yt-dlp-exec": "^1.0.0"
   }
 }

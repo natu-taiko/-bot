@@ -3,7 +3,8 @@ const {
   joinVoiceChannel,
   createAudioPlayer,
   createAudioResource,
-  getVoiceConnection
+  getVoiceConnection,
+  AudioPlayerStatus
 } = require('@discordjs/voice');
 
 const { spawn } = require('child_process');
@@ -24,9 +25,9 @@ let queue = [];
 let playing = false;
 
 // ==========================
-// 🎵 再生（安定版）
+// 🎵 再生処理（完全版）
 // ==========================
-function playNext(message) {
+function playNext() {
   if (queue.length === 0) {
     playing = false;
     return;
@@ -35,14 +36,16 @@ function playNext(message) {
   const url = queue.shift();
   playing = true;
 
-  // 🔽 YouTube取得（安定format）
+  console.log('[PLAY]', url);
+
+  // yt-dlp（安定フォーマット）
   const yt = spawn('yt-dlp', [
     '-f', 'bestaudio[ext=opus]/bestaudio',
     '-o', '-',
     url
   ]);
 
-  // 🔽 ffmpeg（Discord用opus変換）
+  // ffmpeg（Discord用opus変換）
   const ffmpeg = spawn('ffmpeg', [
     '-i', 'pipe:0',
     '-f', 'opus',
@@ -53,7 +56,6 @@ function playNext(message) {
 
   yt.stdout.pipe(ffmpeg.stdin);
 
-  // 🔍 デバッグ（重要）
   yt.stderr.on('data', d => console.log('[yt-dlp]', d.toString()));
   ffmpeg.stderr.on('data', d => console.log('[ffmpeg]', d.toString()));
 
@@ -62,9 +64,23 @@ function playNext(message) {
 
   const resource = createAudioResource(ffmpeg.stdout);
   player.play(resource);
-
-  message.channel.send(`▶ 再生中: ${url}`);
 }
+
+// ==========================
+// 🔁 自動で次に行く（重要）
+// ==========================
+player.on(AudioPlayerStatus.Idle, () => {
+  console.log('[PLAYER] Idle → next');
+  playing = false;
+  playNext();
+});
+
+// エラー時も止めない
+player.on('error', err => {
+  console.error('[PLAYER ERROR]', err);
+  playing = false;
+  playNext();
+});
 
 // ==========================
 // 🎧 コマンド
@@ -96,15 +112,15 @@ client.on('messageCreate', async (message) => {
     queue.push(url);
     message.reply(`キュー追加 📋 (${queue.length})`);
 
-    if (!playing) playNext(message);
+    if (!playing) {
+      playNext();
+    }
   }
 
   // ⏭ スキップ
   if (message.content === '!skip') {
     player.stop();
     message.reply('スキップ ⏭');
-
-    setTimeout(() => playNext(message), 500);
   }
 
   // 🛑 停止
@@ -120,7 +136,6 @@ client.on('messageCreate', async (message) => {
     const conn = getVoiceConnection(message.guild.id);
     if (conn) conn.destroy();
 
-    connection = null;
     queue = [];
     playing = false;
 

@@ -7,7 +7,5 @@
     "start": "node index.js"
   },
   "dependencies": {
-    "discord.js": "^14.26.4",
-    "@discordjs/voice": "^0.19.2"
-  }
+  "yt-dlp-exec": "^..."
 }

@@ -3,10 +3,12 @@ const {
   joinVoiceChannel,
   createAudioPlayer,
   createAudioResource,
-  getVoiceConnection,
-  AudioPlayerStatus
+  AudioPlayerStatus,
+  StreamType
 } = require('@discordjs/voice');
 
+const ffmpegPath = require('ffmpeg-static');
+const ytDlp = require('yt-dlp-exec');
 const { spawn } = require('child_process');
 
 const client = new Client({
@@ -25,9 +27,9 @@ let queue = [];
 let playing = false;
 
 // ==========================
-// 🎵 再生処理（完全版）
+// 🎵 再生処理
 // ==========================
-function playNext() {
+async function playNext(message) {
   if (queue.length === 0) {
     playing = false;
     return;
@@ -38,16 +40,19 @@ function playNext() {
 
   console.log('[PLAY]', url);
 
-  // yt-dlp（安定フォーマット）
-  const yt = spawn('yt-dlp', [
-    '-f', 'bestaudio[ext=opus]/bestaudio',
-    '-o', '-',
-    url
+  // yt-dlp（安定ストリーム）
+  const yt = spawn('node', [
+    '-e',
+    `
+    const ytDlp = require('yt-dlp-exec');
+    ytDlp.raw('${url}', { format: 'bestaudio' }).stdout.pipe(process.stdout);
+    `
   ]);
 
-  // ffmpeg（Discord用opus変換）
-  const ffmpeg = spawn('ffmpeg', [
+  // ffmpeg（discord用opus）
+  const ffmpeg = spawn(ffmpegPath, [
     '-i', 'pipe:0',
+    '-acodec', 'libopus',
     '-f', 'opus',
     '-ar', '48000',
     '-ac', '2',
@@ -59,23 +64,25 @@ function playNext() {
   yt.stderr.on('data', d => console.log('[yt-dlp]', d.toString()));
   ffmpeg.stderr.on('data', d => console.log('[ffmpeg]', d.toString()));
 
-  ffmpeg.on('error', console.error);
-  yt.on('error', console.error);
+  const resource = createAudioResource(ffmpeg.stdout, {
+    inputType: StreamType.Opus
+  });
 
-  const resource = createAudioResource(ffmpeg.stdout);
   player.play(resource);
+
+  if (message) {
+    message.channel.send(`▶ 再生中: ${url}`);
+  }
 }
 
 // ==========================
-// 🔁 自動で次に行く（重要）
+// 🔁 自動次曲
 // ==========================
 player.on(AudioPlayerStatus.Idle, () => {
-  console.log('[PLAYER] Idle → next');
   playing = false;
   playNext();
 });
 
-// エラー時も止めない
 player.on('error', err => {
   console.error('[PLAYER ERROR]', err);
   playing = false;
@@ -104,26 +111,25 @@ client.on('messageCreate', async (message) => {
     return message.reply('VC入った 👍');
   }
 
-  // 🎵 再生追加
+  // 再生追加
   if (message.content.startsWith('!play ')) {
     const url = message.content.split(' ')[1];
-    if (!url) return message.reply('URL入れて');
 
     queue.push(url);
     message.reply(`キュー追加 📋 (${queue.length})`);
 
     if (!playing) {
-      playNext();
+      playNext(message);
     }
   }
 
-  // ⏭ スキップ
+  // スキップ
   if (message.content === '!skip') {
     player.stop();
     message.reply('スキップ ⏭');
   }
 
-  // 🛑 停止
+  // 停止
   if (message.content === '!stop') {
     queue = [];
     playing = false;
@@ -131,26 +137,23 @@ client.on('messageCreate', async (message) => {
     message.reply('停止した 🛑');
   }
 
-  // 🚪退出
+  // 退出
   if (message.content === '!leave') {
-    const conn = getVoiceConnection(message.guild.id);
-    if (conn) conn.destroy();
-
+    if (connection) connection.destroy();
     queue = [];
     playing = false;
-
     message.reply('VC抜けた 👋');
   }
 });
 
 // ==========================
-// 🤖 起動
+// 起動
 // ==========================
 client.once('ready', () => {
   console.log(`ログイン成功: ${client.user.tag}`);
 });
 
 // ==========================
-// 🔐 TOKEN
+// TOKEN
 // ==========================
 client.login(process.env.DISCORD_TOKEN);

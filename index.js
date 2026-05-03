@@ -25,7 +25,7 @@ const player = createAudioPlayer();
 let queue = [];
 let playing = false;
 
-// 🎵 次の曲を再生
+// 🎵 再生処理
 function playNext(message) {
   if (queue.length === 0) {
     playing = false;
@@ -35,11 +35,16 @@ function playNext(message) {
   const url = queue.shift();
   playing = true;
 
-  const yt = spawn('.\\yt-dlp.exe', [
+  // ✅ Railway対応（Windows exe削除）
+  const yt = spawn('yt-dlp', [
     '-f', 'bestaudio',
     '-o', '-',
     url
   ]);
+
+  yt.stderr.on('data', (data) => {
+    console.log(`yt-dlp error: ${data}`);
+  });
 
   const resource = createAudioResource(yt.stdout);
   player.play(resource);
@@ -69,9 +74,10 @@ client.on('messageCreate', (message) => {
   // 📋 キュー追加
   if (message.content.startsWith('!play ')) {
     const url = message.content.split(' ')[1];
+    if (!url) return message.reply('URL入れて');
 
     queue.push(url);
-    message.reply(`キュー追加した 📋 (${queue.length}曲)`);
+    message.reply(`キュー追加 📋 (${queue.length}曲)`);
 
     if (!playing) {
       playNext(message);
@@ -91,8 +97,8 @@ client.on('messageCreate', (message) => {
   // 🛑 停止
   if (message.content === '!stop') {
     queue = [];
-    player.stop();
     playing = false;
+    player.stop();
     message.reply('停止した 🛑');
   }
 
@@ -108,13 +114,15 @@ client.on('messageCreate', (message) => {
   }
 });
 
-// 🎶 再生が終わったら次へ
+// 🎶 曲終了時
 player.on(AudioPlayerStatus.Idle, () => {
-  // 次の曲再生
+  if (playing) return;
 });
 
+// 🤖 起動
 client.once('ready', () => {
   console.log(`ログイン成功: ${client.user.tag}`);
 });
 
-client.login(process.env.TOKEN);
+// 🔐 Railway環境変数対応（ここ重要）
+client.login(process.env.DISCORD_TOKEN);

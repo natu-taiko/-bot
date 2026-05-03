@@ -21,11 +21,10 @@ const client = new Client({
 let connection = null;
 const player = createAudioPlayer();
 
-// 📋 キュー
 let queue = [];
 let playing = false;
 
-// 🎵 再生処理
+// 🎵 YouTube再生
 function playNext(message) {
   if (queue.length === 0) {
     playing = false;
@@ -35,21 +34,35 @@ function playNext(message) {
   const url = queue.shift();
   playing = true;
 
-  // ✅ Railway対応（Windows exe削除）
   const yt = spawn('yt-dlp', [
     '-f', 'bestaudio',
     '-o', '-',
     url
   ]);
 
-  yt.stderr.on('data', (data) => {
-    console.log(`yt-dlp error: ${data}`);
-  });
-
   const resource = createAudioResource(yt.stdout);
   player.play(resource);
 
   message.channel.send(`▶ 再生中: ${url}`);
+}
+
+// 🔇 VC維持（無音ループ）
+function startKeepAlive() {
+  setInterval(() => {
+    if (!connection) return;
+
+    const ffmpeg = spawn('ffmpeg', [
+      '-f', 'lavfi',
+      '-i', 'anullsrc=r=48000:cl=stereo',
+      '-t', '5',
+      '-f', 'opus',
+      'pipe:1'
+    ]);
+
+    const resource = createAudioResource(ffmpeg.stdout);
+    player.play(resource);
+
+  }, 25000); // 25秒ごとに無音再生
 }
 
 // 🎧 メッセージ処理
@@ -68,30 +81,26 @@ client.on('messageCreate', (message) => {
     });
 
     connection.subscribe(player);
-    return message.reply('VC入った 👍');
+
+    startKeepAlive(); // 🔥 VC維持開始
+
+    return message.reply('VC入った & 維持開始 👍');
   }
 
-  // 📋 キュー追加
+  // 📋 再生
   if (message.content.startsWith('!play ')) {
     const url = message.content.split(' ')[1];
-    if (!url) return message.reply('URL入れて');
-
     queue.push(url);
-    message.reply(`キュー追加 📋 (${queue.length}曲)`);
 
-    if (!playing) {
-      playNext(message);
-    }
+    message.reply(`キュー追加 📋 (${queue.length})`);
+
+    if (!playing) playNext(message);
   }
 
   // ⏭ スキップ
   if (message.content === '!skip') {
     player.stop();
-    message.reply('スキップ ⏭');
-
-    setTimeout(() => {
-      playNext(message);
-    }, 500);
+    setTimeout(() => playNext(message), 500);
   }
 
   // 🛑 停止
@@ -107,6 +116,7 @@ client.on('messageCreate', (message) => {
     const conn = getVoiceConnection(message.guild.id);
     if (conn) conn.destroy();
 
+    connection = null;
     queue = [];
     playing = false;
 
@@ -114,15 +124,9 @@ client.on('messageCreate', (message) => {
   }
 });
 
-// 🎶 曲終了時
-player.on(AudioPlayerStatus.Idle, () => {
-  if (playing) return;
-});
-
 // 🤖 起動
 client.once('ready', () => {
   console.log(`ログイン成功: ${client.user.tag}`);
 });
 
-// 🔐 Railway環境変数対応（ここ重要）
 client.login(process.env.DISCORD_TOKEN);

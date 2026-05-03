@@ -24,7 +24,7 @@ const player = createAudioPlayer();
 let queue = [];
 let playing = false;
 
-// 🎵 再生処理（安定版）
+// 🎵 再生（安定版）
 function playNext(message) {
   if (queue.length === 0) {
     playing = false;
@@ -34,24 +34,27 @@ function playNext(message) {
   const url = queue.shift();
   playing = true;
 
-  // ① YouTube取得
+  // YouTube取得
   const yt = spawn('yt-dlp', [
     '-f', 'bestaudio',
     '-o', '-',
     url
   ]);
 
-  // ② ffmpegでopus変換（超重要）
+  // ffmpegでDiscord用に変換（ここが重要）
   const ffmpeg = spawn('ffmpeg', [
     '-i', 'pipe:0',
-    '-f', 'opus',
+    '-f', 's16le',
+    '-ar', '48000',
+    '-ac', '2',
     'pipe:1'
   ]);
 
   yt.stdout.pipe(ffmpeg.stdin);
 
-  yt.stderr.on('data', (d) => console.log(`yt-dlp: ${d}`));
-  ffmpeg.stderr.on('data', (d) => console.log(`ffmpeg: ${d}`));
+  // 🔍 デバッグ（超重要）
+  yt.stderr.on('data', d => console.log('yt-dlp:', d.toString()));
+  ffmpeg.stderr.on('data', d => console.log('ffmpeg:', d.toString()));
 
   const resource = createAudioResource(ffmpeg.stdout);
   player.play(resource);
@@ -59,7 +62,7 @@ function playNext(message) {
   message.channel.send(`▶ 再生中: ${url}`);
 }
 
-// 🎧 メッセージ処理
+// 🎧 メッセージ
 client.on('messageCreate', (message) => {
   if (message.author.bot) return;
 
@@ -119,7 +122,7 @@ client.on('messageCreate', (message) => {
   }
 });
 
-// 🤖 起動ログ
+// 🤖 起動
 client.once('ready', () => {
   console.log(`ログイン成功: ${client.user.tag}`);
 });

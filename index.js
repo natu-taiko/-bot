@@ -24,7 +24,7 @@ const player = createAudioPlayer();
 let queue = [];
 let playing = false;
 
-// 🎵 YouTube再生
+// 🎵 再生処理（安定版）
 function playNext(message) {
   if (queue.length === 0) {
     playing = false;
@@ -34,35 +34,29 @@ function playNext(message) {
   const url = queue.shift();
   playing = true;
 
+  // ① YouTube取得
   const yt = spawn('yt-dlp', [
     '-f', 'bestaudio',
     '-o', '-',
     url
   ]);
 
-  const resource = createAudioResource(yt.stdout);
+  // ② ffmpegでopus変換（超重要）
+  const ffmpeg = spawn('ffmpeg', [
+    '-i', 'pipe:0',
+    '-f', 'opus',
+    'pipe:1'
+  ]);
+
+  yt.stdout.pipe(ffmpeg.stdin);
+
+  yt.stderr.on('data', (d) => console.log(`yt-dlp: ${d}`));
+  ffmpeg.stderr.on('data', (d) => console.log(`ffmpeg: ${d}`));
+
+  const resource = createAudioResource(ffmpeg.stdout);
   player.play(resource);
 
   message.channel.send(`▶ 再生中: ${url}`);
-}
-
-// 🔇 VC維持（無音ループ）
-function startKeepAlive() {
-  setInterval(() => {
-    if (!connection) return;
-
-    const ffmpeg = spawn('ffmpeg', [
-      '-f', 'lavfi',
-      '-i', 'anullsrc=r=48000:cl=stereo',
-      '-t', '5',
-      '-f', 'opus',
-      'pipe:1'
-    ]);
-
-    const resource = createAudioResource(ffmpeg.stdout);
-    player.play(resource);
-
-  }, 25000); // 25秒ごとに無音再生
 }
 
 // 🎧 メッセージ処理
@@ -82,16 +76,15 @@ client.on('messageCreate', (message) => {
 
     connection.subscribe(player);
 
-    startKeepAlive(); // 🔥 VC維持開始
-
-    return message.reply('VC入った & 維持開始 👍');
+    return message.reply('VC入った 👍');
   }
 
-  // 📋 再生
+  // 📋 再生追加
   if (message.content.startsWith('!play ')) {
     const url = message.content.split(' ')[1];
-    queue.push(url);
+    if (!url) return message.reply('URL入れて');
 
+    queue.push(url);
     message.reply(`キュー追加 📋 (${queue.length})`);
 
     if (!playing) playNext(message);
@@ -100,6 +93,8 @@ client.on('messageCreate', (message) => {
   // ⏭ スキップ
   if (message.content === '!skip') {
     player.stop();
+    message.reply('スキップ ⏭');
+
     setTimeout(() => playNext(message), 500);
   }
 
@@ -124,9 +119,10 @@ client.on('messageCreate', (message) => {
   }
 });
 
-// 🤖 起動
+// 🤖 起動ログ
 client.once('ready', () => {
   console.log(`ログイン成功: ${client.user.tag}`);
 });
 
+// 🔐 トークン
 client.login(process.env.DISCORD_TOKEN);

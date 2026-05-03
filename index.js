@@ -3,8 +3,7 @@ const {
   joinVoiceChannel,
   createAudioPlayer,
   createAudioResource,
-  getVoiceConnection,
-  AudioPlayerStatus
+  getVoiceConnection
 } = require('@discordjs/voice');
 
 const { spawn } = require('child_process');
@@ -24,7 +23,9 @@ const player = createAudioPlayer();
 let queue = [];
 let playing = false;
 
+// ==========================
 // 🎵 再生（安定版）
+// ==========================
 function playNext(message) {
   if (queue.length === 0) {
     playing = false;
@@ -34,17 +35,17 @@ function playNext(message) {
   const url = queue.shift();
   playing = true;
 
-  // YouTube取得
+  // 🔽 YouTube取得（安定format）
   const yt = spawn('yt-dlp', [
-    '-f', 'bestaudio',
+    '-f', 'bestaudio[ext=opus]/bestaudio',
     '-o', '-',
     url
   ]);
 
-  // ffmpegでDiscord用に変換（ここが重要）
+  // 🔽 ffmpeg（Discord用opus変換）
   const ffmpeg = spawn('ffmpeg', [
     '-i', 'pipe:0',
-    '-f', 's16le',
+    '-f', 'opus',
     '-ar', '48000',
     '-ac', '2',
     'pipe:1'
@@ -52,9 +53,12 @@ function playNext(message) {
 
   yt.stdout.pipe(ffmpeg.stdin);
 
-  // 🔍 デバッグ（超重要）
-  yt.stderr.on('data', d => console.log('yt-dlp:', d.toString()));
-  ffmpeg.stderr.on('data', d => console.log('ffmpeg:', d.toString()));
+  // 🔍 デバッグ（重要）
+  yt.stderr.on('data', d => console.log('[yt-dlp]', d.toString()));
+  ffmpeg.stderr.on('data', d => console.log('[ffmpeg]', d.toString()));
+
+  ffmpeg.on('error', console.error);
+  yt.on('error', console.error);
 
   const resource = createAudioResource(ffmpeg.stdout);
   player.play(resource);
@@ -62,8 +66,10 @@ function playNext(message) {
   message.channel.send(`▶ 再生中: ${url}`);
 }
 
-// 🎧 メッセージ
-client.on('messageCreate', (message) => {
+// ==========================
+// 🎧 コマンド
+// ==========================
+client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
 
   // VC参加
@@ -82,7 +88,7 @@ client.on('messageCreate', (message) => {
     return message.reply('VC入った 👍');
   }
 
-  // 📋 再生追加
+  // 🎵 再生追加
   if (message.content.startsWith('!play ')) {
     const url = message.content.split(' ')[1];
     if (!url) return message.reply('URL入れて');
@@ -122,10 +128,14 @@ client.on('messageCreate', (message) => {
   }
 });
 
+// ==========================
 // 🤖 起動
+// ==========================
 client.once('ready', () => {
   console.log(`ログイン成功: ${client.user.tag}`);
 });
 
-// 🔐 トークン
+// ==========================
+// 🔐 TOKEN
+// ==========================
 client.login(process.env.DISCORD_TOKEN);
